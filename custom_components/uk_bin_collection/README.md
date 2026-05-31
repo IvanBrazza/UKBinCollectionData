@@ -30,6 +30,7 @@ In the initial configuration step you must provide the following:
 | **name**                | Required    | String  | A unique identifier for your configuration entry. This is used to distinguish different configurations. |
 | **council**             | Required    | Select  | A drop-down selection that displays available councils by their *wiki name*. Your selection will later be mapped to the corresponding council key. |
 | **manual_refresh_only** | Optional    | Boolean | If checked, only manual refreshes will be performed. Defaults to `False`. |
+| **single_calendar**     | Optional    | Boolean | If checked, a single calendar entity containing all bin collection events is created instead of one calendar per bin type. Defaults to `False`. |
 | **icon_color_mapping**  | Optional    | String  | A text field for entering a JSON-formatted mapping for icon colors. If provided, the JSON must be valid. |
 
 > **Note:** The list of available councils is dynamically loaded from an external data source.
@@ -76,6 +77,7 @@ If you need to update your configuration later, you can do so via the options (o
 | **name**                | Required    | String  | The identifier for the configuration entry. |
 | **council**             | Required    | Select  | A drop-down list to select your council (displayed by its *wiki name*). |
 | **manual_refresh_only** | Optional    | Boolean | If enabled, the system will perform only manual refreshes. |
+| **single_calendar**     | Optional    | Boolean | If enabled, a single calendar entity containing all bin collection events is created instead of one calendar per bin type. |
 | **update_interval**     | Required    | Integer | The refresh frequency in hours (must be at least 1). If manual refresh is enabled, this will be set to `None`. |
 | **icon_color_mapping**  | Optional    | String  | A JSON-formatted string for mapping icon colors. Must be valid JSON if provided. |
 

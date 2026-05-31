@@ -118,6 +118,7 @@ class UkBinCollectionConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Required("name"): cv.string,
                     vol.Required("council"): vol.In(self.council_options),
                     vol.Optional("manual_refresh_only", default=True): bool,
+                    vol.Optional("single_calendar", default=False): bool,
                     vol.Optional("icon_color_mapping", default=""): cv.string,
                 }
             ),
@@ -326,6 +327,10 @@ class UkBinCollectionConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Optional(
                 "manual_refresh_only",
                 default=existing_data.get("manual_refresh_only", False),
+            ): bool,
+            vol.Optional(
+                "single_calendar",
+                default=existing_data.get("single_calendar", False),
             ): bool,
             vol.Required(
                 "update_interval", default=existing_data.get("update_interval", 12)
@@ -601,6 +606,10 @@ class UkBinCollectionOptionsFlowHandler(config_entries.OptionsFlow):
                 self.council_options
             ),
             vol.Optional("manual_refresh_only", default=False): bool,
+            vol.Optional(
+                "single_calendar",
+                default=existing_data.get("single_calendar", False),
+            ): bool,
             vol.Required(
                 "update_interval", default=existing_data.get("update_interval", 12)
             ): vol.All(cv.positive_int, vol.Range(min=1)),
