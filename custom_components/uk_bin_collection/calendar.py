@@ -114,6 +114,102 @@ class UKBinCollectionCalendar(CoordinatorEntity, CalendarEntity):
         self.async_write_ha_state()
 
 
+class UKBinCollectionAggregateCalendar(CoordinatorEntity, CalendarEntity):
+    """Single calendar entity aggregating all bin collection events."""
+
+    def __init__(
+        self,
+        coordinator: DataUpdateCoordinator,
+        unique_id: str,
+        name: str,
+    ) -> None:
+        """Initialize the aggregate calendar entity."""
+        super().__init__(coordinator)
+        self._unique_id = unique_id
+        self._name = name
+        self._attr_unique_id = unique_id
+
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, unique_id)},
+            "name": f"{self._name} Device",
+            "manufacturer": "UK Bin Collection",
+            "model": "Bin Collection Calendar",
+            "sw_version": "1.0",
+        }
+
+    @property
+    def name(self) -> str:
+        """Return the name of the calendar."""
+        return self._name
+
+    @property
+    def unique_id(self) -> str:
+        """Return a unique ID for the calendar."""
+        return self._unique_id
+
+    def _all_events(self) -> List[CalendarEvent]:
+        """Build a sorted list of events for every bin type with a date."""
+        events: List[CalendarEvent] = []
+        for bin_type, collection_date in self.coordinator.data.items():
+            if collection_date is None:
+                continue
+            events.append(self._create_calendar_event(bin_type, collection_date))
+        events.sort(key=lambda event: event.start)
+        return events
+
+    @property
+    def event(self) -> Optional[CalendarEvent]:
+        """Return the next upcoming collection event across all bin types."""
+        events = self._all_events()
+        if not events:
+            _LOGGER.debug(f"{LOG_PREFIX} No collection dates available for aggregate calendar.")
+            return None
+        return events[0]
+
+    async def async_get_events(
+        self, hass: HomeAssistant, start_date: datetime, end_date: datetime
+    ) -> List[CalendarEvent]:
+        """Return all bin collection events within a specific time frame."""
+        return [
+            event
+            for event in self._all_events()
+            if start_date.date() <= event.start <= end_date.date()
+        ]
+
+    def _create_calendar_event(
+        self, bin_type: str, collection_date: datetime.date
+    ) -> CalendarEvent:
+        """Create a CalendarEvent for a given bin type and collection date."""
+        return CalendarEvent(
+            summary=f"{bin_type} Collection",
+            start=collection_date,
+            end=collection_date + timedelta(days=1),
+            uid=f"{self.unique_id}_{bin_type}_{collection_date.isoformat()}",
+        )
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available.
+
+        The entity is available if the coordinator's last update was successful
+        and at least one bin type has a valid collection date.
+        """
+        return self.coordinator.last_update_success and any(
+            collection_date is not None
+            for collection_date in self.coordinator.data.values()
+        )
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Return extra state attributes."""
+        return {}
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updates from the coordinator and refresh calendar state."""
+        self.async_write_ha_state()
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
@@ -130,21 +226,35 @@ async def async_setup_entry(
     # Wait for the first refresh. This will raise if the update fails.
     await coordinator.async_config_entry_first_refresh()
 
-    # Create calendar entities only for bin types that have a valid date
-    entities = []
-    for bin_type, collection_date in coordinator.data.items():
-        if collection_date is None:
-            continue
-        unique_id = calc_unique_calendar_id(config_entry.entry_id, bin_type)
-        name = f"{coordinator.name} {bin_type} Calendar"
-        entities.append(
-            UKBinCollectionCalendar(
+    single_calendar = config_entry.data.get("single_calendar", False)
+
+    if single_calendar:
+        # Create a single calendar aggregating all bin collection events.
+        unique_id = calc_unique_aggregate_calendar_id(config_entry.entry_id)
+        name = f"{coordinator.name} Bin Collection Calendar"
+        entities = [
+            UKBinCollectionAggregateCalendar(
                 coordinator=coordinator,
-                bin_type=bin_type,
                 unique_id=unique_id,
                 name=name,
             )
-        )
+        ]
+    else:
+        # Create calendar entities only for bin types that have a valid date
+        entities = []
+        for bin_type, collection_date in coordinator.data.items():
+            if collection_date is None:
+                continue
+            unique_id = calc_unique_calendar_id(config_entry.entry_id, bin_type)
+            name = f"{coordinator.name} {bin_type} Calendar"
+            entities.append(
+                UKBinCollectionCalendar(
+                    coordinator=coordinator,
+                    bin_type=bin_type,
+                    unique_id=unique_id,
+                    name=name,
+                )
+            )
 
     # Register all calendar entities with Home Assistant
     async_add_entities(entities)
@@ -166,3 +276,8 @@ async def async_unload_entry(
 def calc_unique_calendar_id(entry_id: str, bin_type: str) -> str:
     """Calculate a unique ID for the calendar."""
     return f"{entry_id}_{bin_type}_calendar"
+
+
+def calc_unique_aggregate_calendar_id(entry_id: str) -> str:
+    """Calculate a unique ID for the aggregate (single) calendar."""
+    return f"{entry_id}_bin_collection_calendar"

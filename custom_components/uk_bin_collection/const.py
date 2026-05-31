@@ -37,4 +37,5 @@ EXCLUDED_ARG_KEYS = {
     "update_interval",
     "manual_refresh_only",
     "original_parser",
+    "single_calendar",
 }

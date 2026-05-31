@@ -12,6 +12,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from custom_components.uk_bin_collection.const import DOMAIN
 from custom_components.uk_bin_collection.calendar import (
     UKBinCollectionCalendar,
+    UKBinCollectionAggregateCalendar,
     async_setup_entry,
     async_unload_entry,
 )
@@ -463,6 +464,165 @@ async def test_async_get_events_multiple_events_same_day(
 
     assert events_recycling == [expected_event_recycling]
     assert events_general_waste == [expected_event_general_waste]
+
+
+# Aggregate (single) calendar tests
+
+
+def test_aggregate_calendar_initialization(hass_instance, mock_coordinator):
+    """Test that the aggregate calendar entity initializes correctly."""
+    calendar = UKBinCollectionAggregateCalendar(
+        coordinator=mock_coordinator,
+        unique_id="test_entry_id_bin_collection_calendar",
+        name="Test Council Bin Collection Calendar",
+    )
+
+    assert calendar.name == "Test Council Bin Collection Calendar"
+    assert calendar.unique_id == "test_entry_id_bin_collection_calendar"
+    assert calendar.device_info == {
+        "identifiers": {(DOMAIN, "test_entry_id_bin_collection_calendar")},
+        "name": "Test Council Bin Collection Calendar Device",
+        "manufacturer": "UK Bin Collection",
+        "model": "Bin Collection Calendar",
+        "sw_version": "1.0",
+    }
+
+
+def test_aggregate_calendar_event_returns_soonest(hass_instance, mock_coordinator):
+    """Test that the event property returns the soonest upcoming collection."""
+    mock_coordinator.data = {
+        "Recycling": date(2024, 4, 26),
+        "General Waste": date(2024, 4, 25),
+        "Garden Waste": date(2024, 4, 27),
+    }
+
+    calendar = UKBinCollectionAggregateCalendar(
+        coordinator=mock_coordinator,
+        unique_id="test_entry_id_bin_collection_calendar",
+        name="Test Council Bin Collection Calendar",
+    )
+
+    expected_event = CalendarEvent(
+        summary="General Waste Collection",
+        start=date(2024, 4, 25),
+        end=date(2024, 4, 26),
+        uid="test_entry_id_bin_collection_calendar_General Waste_2024-04-25",
+    )
+
+    assert calendar.event == expected_event
+
+
+def test_aggregate_calendar_event_no_data(hass_instance, mock_coordinator):
+    """Test that the event property returns None when there are no dates."""
+    mock_coordinator.data = {"Recycling": None, "General Waste": None}
+
+    calendar = UKBinCollectionAggregateCalendar(
+        coordinator=mock_coordinator,
+        unique_id="test_entry_id_bin_collection_calendar",
+        name="Test Council Bin Collection Calendar",
+    )
+
+    assert calendar.event is None
+
+
+@pytest.mark.asyncio
+async def test_aggregate_calendar_get_events(hass_instance, mock_coordinator):
+    """Test that async_get_events returns all events in range, sorted."""
+    mock_coordinator.data = {
+        "Recycling": date(2024, 4, 26),
+        "General Waste": date(2024, 4, 25),
+        "Garden Waste": date(2024, 5, 10),
+    }
+
+    calendar = UKBinCollectionAggregateCalendar(
+        coordinator=mock_coordinator,
+        unique_id="test_entry_id_bin_collection_calendar",
+        name="Test Council Bin Collection Calendar",
+    )
+
+    start_date = datetime(2024, 4, 24)
+    end_date = datetime(2024, 4, 30)
+
+    events = await calendar.async_get_events(hass_instance, start_date, end_date)
+
+    assert events == [
+        CalendarEvent(
+            summary="General Waste Collection",
+            start=date(2024, 4, 25),
+            end=date(2024, 4, 26),
+            uid="test_entry_id_bin_collection_calendar_General Waste_2024-04-25",
+        ),
+        CalendarEvent(
+            summary="Recycling Collection",
+            start=date(2024, 4, 26),
+            end=date(2024, 4, 27),
+            uid="test_entry_id_bin_collection_calendar_Recycling_2024-04-26",
+        ),
+    ]
+
+
+def test_aggregate_calendar_available(hass_instance, mock_coordinator):
+    """Test the available property of the aggregate calendar entity."""
+    mock_coordinator.last_update_success = True
+    mock_coordinator.data = {"Recycling": date(2024, 4, 25), "General Waste": None}
+    calendar = UKBinCollectionAggregateCalendar(
+        coordinator=mock_coordinator,
+        unique_id="test_entry_id_bin_collection_calendar",
+        name="Test Council Bin Collection Calendar",
+    )
+    assert calendar.available is True
+
+    mock_coordinator.data = {"Recycling": None, "General Waste": None}
+    assert calendar.available is False
+
+    mock_coordinator.data = {"Recycling": date(2024, 4, 25)}
+    mock_coordinator.last_update_success = False
+    assert calendar.available is False
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_creates_single_calendar(
+    hass_instance, mock_coordinator
+):
+    """Test that async_setup_entry creates one aggregate calendar when enabled."""
+    mock_coordinator.data = {
+        "Recycling": date(2024, 4, 25),
+        "General Waste": date(2024, 4, 26),
+    }
+
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Test Entry",
+        data={
+            "name": "Test Name",
+            "council": "Test Council",
+            "single_calendar": True,
+        },
+        entry_id="test_entry_id",
+        unique_id="test_unique_id",
+    )
+
+    hass_instance.data[DOMAIN][config_entry.entry_id] = {
+        "coordinator": mock_coordinator,
+    }
+
+    with patch(
+        "custom_components.uk_bin_collection.calendar.UKBinCollectionAggregateCalendar",
+        autospec=True,
+    ) as mock_aggregate_cls, patch(
+        "custom_components.uk_bin_collection.calendar.UKBinCollectionCalendar",
+        autospec=True,
+    ) as mock_calendar_cls:
+        await async_setup_entry(hass_instance, config_entry, lambda entities: None)
+
+        # Only the aggregate calendar should be created.
+        mock_calendar_cls.assert_not_called()
+        assert mock_aggregate_cls.call_count == 1
+        mock_aggregate_cls.assert_called_once_with(
+            coordinator=mock_coordinator,
+            unique_id="test_entry_id_bin_collection_calendar",
+            name="Test Council Bin Collection Calendar",
+        )
 
 
 @pytest.mark.asyncio
